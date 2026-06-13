@@ -1,0 +1,163 @@
+# =============================================================================
+#  Fraction — configuration file
+#  death legion team · MIT licensed
+#
+#  Copy this file to fraction.yaml and fill in the providers you want to use.
+#  Any provider you don't set will simply be skipped. Fraction falls back
+#  across providers automatically if one fails or hits a rate limit.
+# =============================================================================
+
+app:
+  name: "Fraction"
+  owner: "death legion team"
+  host: "0.0.0.0"
+  port: 8000
+  log_level: "info"           # debug | info | warning | error
+
+# -----------------------------------------------------------------------------
+# Model providers
+#
+# Each provider entry has:
+#   enabled:   true | false
+#   api_key:   your key (use ${ENV_VAR} to read from environment)
+#   base_url:  override endpoint (leave default for cloud providers)
+#   models:    list of model IDs to make available
+#   default:   which model to use when no role-specific override is set
+#   free:      mark as true to put it in the "free tier" rotation
+#
+# Free / cheap providers that work great with Fraction:
+#   - Groq                 (very fast, generous free tier)
+#   - Google Gemini        (free tier via AI Studio)
+#   - OpenRouter           (many free models, one key for all)
+#   - Ollama               (fully local, no key needed, runs in a sidecar)
+# -----------------------------------------------------------------------------
+providers:
+
+  openai:
+    enabled: false
+    api_key: "${OPENAI_API_KEY}"
+    base_url: "https://api.openai.com/v1"
+    models: ["gpt-4o", "gpt-4o-mini", "o3-mini"]
+    default: "gpt-4o-mini"
+
+  anthropic:
+    enabled: false
+    api_key: "${ANTHROPIC_API_KEY}"
+    base_url: "https://api.anthropic.com"
+    models: ["claude-sonnet-4-5", "claude-haiku-4-5"]
+    default: "claude-sonnet-4-5"
+
+  google:
+    enabled: false
+    api_key: "${GOOGLE_API_KEY}"
+    base_url: "https://generativelanguage.googleapis.com/v1beta"
+    models: ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-pro"]
+    default: "gemini-2.0-flash"
+    free: true
+
+  groq:
+    enabled: false
+    api_key: "${GROQ_API_KEY}"
+    base_url: "https://api.groq.com/openai/v1"
+    models: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]
+    default: "llama-3.3-70b-versatile"
+    free: true
+
+  openrouter:
+    enabled: false
+    api_key: "${OPENROUTER_API_KEY}"
+    base_url: "https://openrouter.ai/api/v1"
+    models:
+      - "meta-llama/llama-3.3-70b-instruct:free"
+      - "deepseek/deepseek-chat:free"
+      - "qwen/qwen-2.5-72b-instruct:free"
+      - "google/gemini-2.0-flash-exp:free"
+    default: "meta-llama/llama-3.3-70b-instruct:free"
+    free: true
+
+  ollama:
+    enabled: false
+    api_key: "ollama"
+    base_url: "http://ollama:11434/v1"   # use http://host.docker.internal:11434/v1 on Mac/Win
+    models: ["llama3.2", "qwen2.5", "mistral", "deepseek-coder"]
+    default: "llama3.2"
+    free: true
+
+# -----------------------------------------------------------------------------
+# Per-role model assignment
+#   If a role isn't listed, the global `default` is used.
+# -----------------------------------------------------------------------------
+roles:
+  planner:    ""   # big reasoning model is great here
+  researcher: ""   # long-context model is great here
+  coder:      ""   # code-tuned model
+  reviewer:   ""   # critical-eye model
+  writer:     ""   # good prose model
+
+# -----------------------------------------------------------------------------
+# Agent behavior
+# -----------------------------------------------------------------------------
+agents:
+  max_steps_per_task: 25
+  max_parallel_subtasks: 4
+  step_timeout_seconds: 180
+  enable_self_critique: true
+  enable_replanner: true          # re-plan mid-run if a step fails
+
+# -----------------------------------------------------------------------------
+# Sandbox (code execution)
+# -----------------------------------------------------------------------------
+sandbox:
+  enabled: true
+  runtime: "docker"               # docker only for now
+  image: "fraction-sandbox:latest"
+  cpu_limit: "1.0"
+  memory_limit: "1g"
+  network: "restricted"           # restricted | none | full
+  default_timeout_seconds: 60
+  max_timeout_seconds: 300
+  workspace_mount: "./sandbox/workspaces"
+
+# -----------------------------------------------------------------------------
+# Memory
+# -----------------------------------------------------------------------------
+memory:
+  short_term:
+    max_messages: 50
+  long_term:
+    backend: "chroma"             # chroma | sqlite
+    path: "./memory/store"
+    collection: "fraction_memories"
+    embedding_provider: "ollama"  # any provider from above; uses its default model
+    embedding_model: "nomic-embed-text"
+  reflection:
+    enabled: true
+    min_episodes_to_reflect: 5
+
+# -----------------------------------------------------------------------------
+# Tools available to agents
+# -----------------------------------------------------------------------------
+tools:
+  web_search:
+    enabled: true
+    provider: "duckduckgo"        # duckduckgo | serpapi | tavily
+    api_key: ""
+    max_results: 8
+  web_fetch:
+    enabled: true
+    max_bytes: 2_000_000
+    timeout_seconds: 20
+  file_io:
+    enabled: true
+    allowed_paths:
+      - "./workspaces"
+      - "./memory"
+      - "./deliverables"
+  code_exec:
+    enabled: true                 # routes to sandbox service
+  image_gen:
+    enabled: false
+    provider: "openai"            # openai | stability | replicate
+  speech:
+    enabled: false
+    provider: "openai"

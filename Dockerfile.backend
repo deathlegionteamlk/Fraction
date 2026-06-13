@@ -1,0 +1,33 @@
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    FRACTION_CONFIG=/app/config/fraction.yaml
+
+WORKDIR /app
+
+# System deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python deps first (better layer caching)
+COPY backend/requirements.txt /app/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+
+# App code
+COPY backend/app /app/backend/app
+COPY frontend /app/frontend
+COPY config /app/config
+RUN mkdir -p /app/memory/store /app/workspaces /app/deliverables
+
+WORKDIR /app/backend
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD curl -fsS http://localhost:8000/api/health || exit 1
+
+CMD ["python", "-m", "app.main"]

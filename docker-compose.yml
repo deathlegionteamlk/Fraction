@@ -1,0 +1,125 @@
+name: fraction
+
+# =============================================================================
+#  Fraction — recommended Docker setup
+#  death legion team · MIT
+#
+#  First run:
+#     cp config/fraction.yaml.example config/fraction.yaml
+#     # edit config/fraction.yaml and add API keys
+#     docker compose up --build
+#
+#  Open: http://localhost:3000
+# =============================================================================
+
+x-common-env: &common-env
+  FRACTION_CONFIG: /app/config/fraction.yaml
+  PYTHONUNBUFFERED: "1"
+  # Pass your keys here if you don't want them in fraction.yaml
+  # OPENAI_API_KEY: ${OPENAI_API_KEY}
+  # ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+  # GROQ_API_KEY: ${GROQ_API_KEY}
+  # GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+  # OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Backend — the multi-agent orchestrator (FastAPI)
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: fraction/backend:0.1.0
+    container_name: fraction-backend
+    restart: unless-stopped
+    environment:
+      <<: *common-env
+      SANDBOX_URL: http://sandbox:9000
+    volumes:
+      - ./config:/app/config
+      - ./memory:/app/memory
+      - ./workspaces:/app/workspaces
+      - ./deliverables:/app/deliverables
+    expose:
+      - "8000"
+    networks:
+      - fraction-net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ---------------------------------------------------------------------------
+  # Sandbox — runs user-generated code in a tight, restricted container
+  # ---------------------------------------------------------------------------
+  sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    image: fraction/sandbox:0.1.0
+    container_name: fraction-sandbox
+    restart: unless-stopped
+    # Docker socket mount lets the sandbox spin up short-lived run containers
+    # (with --network none and tight CPU/memory limits). Remove the volume
+    # line below to run in fallback in-process mode (less isolated).
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - SANDBOX_USE_DOCKER=1
+    expose:
+      - "9000"
+    networks:
+      - fraction-net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ---------------------------------------------------------------------------
+  # Frontend — static UI served by nginx, proxies /api to the backend
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: fraction/frontend:0.1.0
+    container_name: fraction-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - fraction-net
+
+  # ---------------------------------------------------------------------------
+  # Ollama (optional) — fully local, no API key needed.
+  # Uncomment to use Ollama as your model provider.
+  # Then in fraction.yaml set providers.ollama.enabled: true
+  # and the base_url http://ollama:11434/v1.
+  # ---------------------------------------------------------------------------
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: fraction-ollama
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ollama-data:/root/.ollama
+  #   ports:
+  #     - "11434:11434"
+  #   networks:
+  #     - fraction-net
+  #   # First boot is slow because it has to pull the model:
+  #   #   docker compose exec ollama ollama pull llama3.2
+  #   #   docker compose exec ollama ollama pull nomic-embed-text
+
+networks:
+  fraction-net:
+    driver: bridge
+
+# volumes:
+#   ollama-data:
